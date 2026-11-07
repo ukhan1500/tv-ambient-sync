@@ -30,14 +30,35 @@ class MainActivity : Activity() {
   super.onCreate(state)
   layout = LinearLayout(this).apply { orientation = 1; setPadding(48,24,48,24) }
   setContentView(ScrollView(this).apply { addView(layout) })
-  log = TextView(this).apply { text = "TV Ambient Sync • v0.4\nExperimental protocol. Select a writable characteristic before testing." }
+  log = TextView(this).apply { text = "TV Ambient Sync • v0.5\nExperimental protocol. Select a writable characteristic before testing." }
   layout.addView(log)
   button("Start Sync") { startSync() }
   button("Stop Sync") { stopService(android.content.Intent(this,SyncService::class.java)); report("Sync stopped") }
   button("Sync status") { report(getSharedPreferences("sync",0).getString("status","Not started") ?: "Not started") }
   button("Speed: toggle instant 50 / smooth 250 ms") { interval=if(interval==50L) 250L else 50L; report("Next session interval: $interval ms") }
   button("Color enhancement: toggle on/off") { vivid=!vivid; report("Next session enhanced colors: $vivid") }
-  button("Brightness: toggle 80% / 50%") { brightness=if(brightness==0.8) 0.5 else 0.8; report("Next session brightness: $brightness") }
+  brightness=getSharedPreferences("settings",0).getInt("brightness",80)/100.0
+  val brightnessLabel=TextView(this).apply { text="Brightness: ${(brightness*100).toInt()}% — use Left / Right" }
+  layout.addView(brightnessLabel)
+  layout.addView(SeekBar(this).apply {
+   max=100
+   progress=getSharedPreferences("settings",0).getInt("brightness",80)
+   keyProgressIncrement=1
+   minimumHeight=64
+   contentDescription="LED brightness, 0 to 100 percent"
+   setOnSeekBarChangeListener(object: SeekBar.OnSeekBarChangeListener {
+    override fun onProgressChanged(bar: SeekBar?, value: Int, fromUser: Boolean) {
+     brightness=value/100.0
+     brightnessLabel.text="Brightness: $value% — use Left / Right"
+     if(fromUser) {
+      getSharedPreferences("settings",0).edit().putInt("brightness",value).apply()
+      sendBroadcast(android.content.Intent("com.tvambientsync.BRIGHTNESS").setPackage(packageName).putExtra("value",value))
+     }
+    }
+    override fun onStartTrackingTouch(bar: SeekBar?) {}
+    override fun onStopTrackingTouch(bar: SeekBar?) {}
+   })
+  })
   button("Scan for LEDs (15 seconds)") { scan() }
   button("Disconnect") { disconnect() }
   listOf("Red" to intArrayOf(255,0,0), "Green" to intArrayOf(0,255,0), "Blue" to intArrayOf(0,0,255), "White" to intArrayOf(255,255,255), "Off" to intArrayOf(0,0,0)).forEach { (name,rgb) ->
