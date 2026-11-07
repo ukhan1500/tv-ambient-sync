@@ -28,7 +28,9 @@ class SyncService : Service() {
  private var lastWrite = 0L
  private var smooth: DoubleArray? = null
  private var sent = intArrayOf(-255,-255,-255)
- private var interval = 250L
+ private var interval = 100L
+ private var vivid = false
+ private var lastStatus = 0L
  private var brightness = 0.8
  private var running = false
  private val reconnect = Runnable { if(running) connect() }
@@ -55,7 +57,8 @@ class SyncService : Service() {
    address=intent.getStringExtra("address")!!
    serviceId=intent.getStringExtra("service")!!
    characteristicId=intent.getStringExtra("characteristic")!!
-   interval=intent.getLongExtra("interval",250).coerceIn(150,1000)
+   interval=intent.getLongExtra("interval",100).coerceIn(100,1000)
+   vivid=intent.getBooleanExtra("vivid",false)
    brightness=intent.getDoubleExtra("brightness",0.8).coerceIn(0.0,1.0)
    projection=getSystemService(MediaProjectionManager::class.java).getMediaProjection(Activity.RESULT_OK,token)
    projection!!.registerCallback(object: MediaProjection.Callback() { override fun onStop() { status("Screen capture stopped; grant consent to restart."); stopSelf() } },h)
@@ -78,12 +81,16 @@ class SyncService : Service() {
         count++
        }
        val target=DoubleArray(3) { sums[it].toDouble()/count }
+       if(vivid) {
+        val gray=target.average()
+        for(k in 0..2) target[k]=(gray+(target[k]-gray)*1.8).coerceIn(0.0,255.0)
+       }
        val current=smooth ?: target.copyOf()
-       for(k in 0..2) current[k]+=0.35*(target[k]-current[k])
+       for(k in 0..2) current[k]+=(if(interval<=100) 0.8 else 0.35)*(target[k]-current[k])
        smooth=current
        val rgb=IntArray(3) { (current[it]*brightness).toInt().coerceIn(0,255) }
        if(rgb.indices.any { kotlin.math.abs(rgb[it]-sent[it]) >= 4 } || now-lastWrite>2000) write(rgb)
-       status(if(target.all { it<3 }) "Sync active: black frame (dark or protected content)" else "Sync active • RGB ${rgb.joinToString()} • BLE ${if(characteristic!=null) "ready" else "connecting"}")
+       if(now-lastStatus>=1000) { lastStatus=now; status(if(target.all { it<3 }) "Sync active: black frame (dark or protected content)" else "Sync active • RGB ${rgb.joinToString()} • BLE ${if(characteristic!=null) "ready" else "connecting"}") }
       }
      } catch(e: Exception) { status("Frame error: ${e.message}") } finally { frame.close() }
     }
