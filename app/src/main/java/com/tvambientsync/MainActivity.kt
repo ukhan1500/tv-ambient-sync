@@ -30,8 +30,19 @@ class MainActivity : Activity() {
   super.onCreate(state)
   layout = LinearLayout(this).apply { orientation = 1; setPadding(48,24,48,24) }
   setContentView(ScrollView(this).apply { addView(layout) })
-  log = TextView(this).apply { text = "TV Ambient Sync • v0.5\nExperimental protocol. Select a writable characteristic before testing." }
+  log = TextView(this).apply { text = "TV Ambient Sync • v0.6\nExperimental protocol. Select a writable characteristic before testing." }
   layout.addView(log)
+  button("Record video diagnostics (10s delay, 10s recording)") {
+   if(getSharedPreferences("sync",0).getBoolean("running",false)) {
+    sendBroadcast(android.content.Intent("com.tvambientsync.DIAGNOSTICS").setPackage(packageName))
+    report("Return to your video now. Wait 20 seconds before coming back.")
+   } else report("Start Sync first.")
+  }
+  button("Show saved video diagnostics") {
+   android.app.AlertDialog.Builder(this).setTitle("Saved video samples")
+    .setMessage(getSharedPreferences("diagnostics",0).getString("result","No recording yet. Start sync, then record diagnostics."))
+    .setPositiveButton("Close",null).show()
+  }
   button("Start Sync") { startSync() }
   button("Stop Sync") { stopService(android.content.Intent(this,SyncService::class.java)); report("Sync stopped") }
   button("Sync status") { report(getSharedPreferences("sync",0).getString("status","Not started") ?: "Not started") }
