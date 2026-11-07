@@ -28,7 +28,8 @@ class SyncService : Service() {
  private var lastWrite = 0L
  private var smooth: DoubleArray? = null
  private var sent = intArrayOf(-255,-255,-255)
- private var interval = 100L
+ private var interval = 50L
+ private var dominantBin = -1
  private var vivid = false
  private var lastStatus = 0L
  private var brightness = 0.8
@@ -57,7 +58,7 @@ class SyncService : Service() {
    address=intent.getStringExtra("address")!!
    serviceId=intent.getStringExtra("service")!!
    characteristicId=intent.getStringExtra("characteristic")!!
-   interval=intent.getLongExtra("interval",100).coerceIn(100,1000)
+   interval=intent.getLongExtra("interval",50).coerceIn(50,1000)
    vivid=intent.getBooleanExtra("vivid",false)
    brightness=intent.getDoubleExtra("brightness",0.8).coerceIn(0.0,1.0)
    projection=getSystemService(MediaProjectionManager::class.java).getMediaProjection(Activity.RESULT_OK,token)
@@ -74,23 +75,40 @@ class SyncService : Service() {
       if(now-lastFrame >= interval) {
        lastFrame=now
        val p=frame.planes[0]; val b=p.buffer
-       val sums=LongArray(3); var count=0
+       // Group chromatic pixels into 12 hue families; neutrals into four brightness groups.
+       // Every sampled pixel votes equally, including black.
+       val votes=IntArray(16)
+       val sums=Array(16) { LongArray(3) }
+       val hsv=FloatArray(3)
+       var count=0
        for(y in 0 until frame.height step 2) for(x in 0 until frame.width step 2) {
         val offset=y*p.rowStride+x*p.pixelStride
-        for(k in 0..2) sums[k]+=(b.get(offset+k).toInt() and 255)
+        val r=b.get(offset).toInt() and 255
+        val g=b.get(offset+1).toInt() and 255
+        val blue=b.get(offset+2).toInt() and 255
+        android.graphics.Color.RGBToHSV(r,g,blue,hsv)
+        val bin=if(hsv[1]<0.20f || hsv[2]<0.08f) 12+(hsv[2]*4).toInt().coerceIn(0,3)
+          else (((hsv[0]+15f)%360f)/30f).toInt().coerceIn(0,11)
+        votes[bin]++
+        sums[bin][0]+=r; sums[bin][1]+=g; sums[bin][2]+=blue
         count++
        }
-       val target=DoubleArray(3) { sums[it].toDouble()/count }
+       val winner=votes.indices.maxByOrNull { votes[it] } ?: 0
+       // Hold the existing family only for near ties (under five percentage points).
+       if(dominantBin<0 || votes[dominantBin]==0 ||
+          votes[winner]>votes[dominantBin]+count*0.05) dominantBin=winner
+       val target=DoubleArray(3) { sums[dominantBin][it].toDouble()/votes[dominantBin].coerceAtLeast(1) }
+       val share=100*votes[dominantBin]/count.coerceAtLeast(1)
        if(vivid) {
         val gray=target.average()
         for(k in 0..2) target[k]=(gray+(target[k]-gray)*1.8).coerceIn(0.0,255.0)
        }
        val current=smooth ?: target.copyOf()
-       for(k in 0..2) current[k]+=(if(interval<=100) 0.8 else 0.35)*(target[k]-current[k])
+       for(k in 0..2) current[k]+=(if(interval<=50) 1.0 else if(interval<=100) 0.8 else 0.35)*(target[k]-current[k])
        smooth=current
        val rgb=IntArray(3) { (current[it]*brightness).toInt().coerceIn(0,255) }
        if(rgb.indices.any { kotlin.math.abs(rgb[it]-sent[it]) >= 4 } || now-lastWrite>2000) write(rgb)
-       if(now-lastStatus>=1000) { lastStatus=now; status(if(target.all { it<3 }) "Sync active: black frame (dark or protected content)" else "Sync active • RGB ${rgb.joinToString()} • BLE ${if(characteristic!=null) "ready" else "connecting"}") }
+       if(now-lastStatus>=1000) { lastStatus=now; status(if(target.all { it<3 }) "Sync active: black frame (dark or protected content)" else "Dominant $share% • RGB ${rgb.joinToString()} • BLE ${if(characteristic!=null) "ready" else "connecting"}") }
       }
      } catch(e: Exception) { status("Frame error: ${e.message}") } finally { frame.close() }
     }
