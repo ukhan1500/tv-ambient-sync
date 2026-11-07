@@ -18,6 +18,9 @@ class MainActivity : Activity() {
  private var selected: BluetoothGattCharacteristic? = null
  private val seen = mutableSetOf<String>()
  private var busy = false
+ private var deviceAddress = ""
+ private var interval = 250L
+ private var brightness = 0.8
  private fun report(s: String) = runOnUiThread { log.append("\n$s") }
  private fun button(title: String, action: () -> Unit) {
   layout.addView(Button(this).apply { text = title; setOnClickListener { try { action() } catch(e: Exception) { report(e.toString()) } } })
@@ -28,11 +31,35 @@ class MainActivity : Activity() {
   setContentView(ScrollView(this).apply { addView(layout) })
   log = TextView(this).apply { text = "TV Ambient Sync • Phase 1\nExperimental protocol. Select a writable characteristic before testing." }
   layout.addView(log)
+  button("Start Sync") { startSync() }
+  button("Stop Sync") { stopService(android.content.Intent(this,SyncService::class.java)); report("Sync stopped") }
+  button("Sync status") { report(getSharedPreferences("sync",0).getString("status","Not started") ?: "Not started") }
+  button("Update speed: toggle 250 / 500 ms") { interval=if(interval==250L) 500L else 250L; report("Next session interval: $interval ms") }
+  button("Brightness: toggle 80% / 50%") { brightness=if(brightness==0.8) 0.5 else 0.8; report("Next session brightness: $brightness") }
   button("Scan for LEDs (15 seconds)") { scan() }
   button("Disconnect") { disconnect() }
   listOf("Red" to intArrayOf(255,0,0), "Green" to intArrayOf(0,255,0), "Blue" to intArrayOf(0,0,255), "White" to intArrayOf(255,255,255), "Off" to intArrayOf(0,0,0)).forEach { (name,rgb) ->
    button("Experimental $name") { send(rgb) }
   }
+ }
+ private fun startSync() {
+  if(gatt == null || selected == null) { report("Connect and select the tested FFF3 characteristic first."); return }
+  val manager=getSystemService(android.media.projection.MediaProjectionManager::class.java)
+  val consent=if(Build.VERSION.SDK_INT>=34) manager.createScreenCaptureIntent(android.media.projection.MediaProjectionConfig.createConfigForDefaultDisplay()) else manager.createScreenCaptureIntent()
+  startActivityForResult(consent,22)
+ }
+ override fun onActivityResult(requestCode: Int,resultCode: Int,data: android.content.Intent?) {
+  super.onActivityResult(requestCode,resultCode,data)
+  if(requestCode!=22) return
+  if(resultCode!=RESULT_OK || data==null) { report("Screen capture permission declined"); return }
+  val c=selected ?: return
+  val request=android.content.Intent(this,SyncService::class.java)
+   .putExtra("token",data).putExtra("address",deviceAddress)
+   .putExtra("service",c.service.uuid.toString()).putExtra("characteristic",c.uuid.toString())
+   .putExtra("interval",interval).putExtra("brightness",brightness)
+  disconnect()
+  startForegroundService(request)
+  report("Starting sync. Press Home and open other apps. Use Sync status to check progress.")
  }
  private fun permissions() = if(Build.VERSION.SDK_INT >= 31) arrayOf(Manifest.permission.BLUETOOTH_SCAN,Manifest.permission.BLUETOOTH_CONNECT) else arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
  private fun scan() {
@@ -52,9 +79,10 @@ class MainActivity : Activity() {
    runOnUiThread { button("Connect: ${result.scanRecord?.deviceName ?: device.name ?: "Unnamed"} • ${device.address}") {
     adapter.bluetoothLeScanner.stopScan(this)
     disconnect()
+    deviceAddress=device.address
     report("Connecting ${device.address}")
     gatt = device.connectGatt(this@MainActivity,false,callback,BluetoothDevice.TRANSPORT_LE)
-    handler.postDelayed({ if(selected == null) { report("Connection/discovery timeout; reconnect if needed.") } },20000)
+    handler.postDelayed({ if(gatt == null) { report("Connection/discovery timeout; reconnect if needed.") } },20000)
    } }
   }
  }
