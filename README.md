@@ -35,7 +35,7 @@ Reported by the project owner on November 7, 2026. These are observations from o
 - Screen synchronization works on Google TV menus and SmartTube using **AVC / H.264** playback.
 - SmartTube VP9 playback produced nearly uniform dark-gray capture samples (RGB 16,16,16), despite visible colorful video. AVC produced changing blue and warm-color samples on the same setup.
 - Returning the onn. to its normal display settings and using AVC resolved the reported playback-start lag. Forcing SDR is not a requirement for the working configuration.
-- The owner reports slight LED color changes during **Paramount live UFC**. Accurate capture of the program image has not been verified; changes could include capturable interface elements. Earlier episode playback did not track correctly. Do not interpret this as confirmed Paramount or DRM compatibility.
+- **Paramount+:** the owner reports screen-color synchronization working during live TV, including live UFC, but not during on-demand TV shows (tested with Avatar). This is a user-observed result on the tested setup, not a guarantee for every live channel or program. The reason for the live/on-demand difference has not been verified, and the app does not bypass protected-content restrictions.
 
 Codec and rendering paths can affect capture. Choosing AVC helped this device in SmartTube; it is not a universal fix for every app.
 
