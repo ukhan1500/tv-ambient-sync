@@ -19,7 +19,7 @@ class MainActivity : Activity() {
  private val seen = mutableSetOf<String>()
  private var busy = false
  private var deviceAddress = ""
- private var interval = 100L
+ private var interval = 50L
  private var vivid = false
  private var brightness = 0.8
  private fun report(s: String) = runOnUiThread { log.append("\n$s") }
@@ -30,12 +30,12 @@ class MainActivity : Activity() {
   super.onCreate(state)
   layout = LinearLayout(this).apply { orientation = 1; setPadding(48,24,48,24) }
   setContentView(ScrollView(this).apply { addView(layout) })
-  log = TextView(this).apply { text = "TV Ambient Sync • v0.3\nExperimental protocol. Select a writable characteristic before testing." }
+  log = TextView(this).apply { text = "TV Ambient Sync • v0.4\nExperimental protocol. Select a writable characteristic before testing." }
   layout.addView(log)
   button("Start Sync") { startSync() }
   button("Stop Sync") { stopService(android.content.Intent(this,SyncService::class.java)); report("Sync stopped") }
   button("Sync status") { report(getSharedPreferences("sync",0).getString("status","Not started") ?: "Not started") }
-  button("Speed: toggle fast 100 / smooth 250 ms") { interval=if(interval==100L) 250L else 100L; report("Next session interval: $interval ms") }
+  button("Speed: toggle instant 50 / smooth 250 ms") { interval=if(interval==50L) 250L else 50L; report("Next session interval: $interval ms") }
   button("Color enhancement: toggle on/off") { vivid=!vivid; report("Next session enhanced colors: $vivid") }
   button("Brightness: toggle 80% / 50%") { brightness=if(brightness==0.8) 0.5 else 0.8; report("Next session brightness: $brightness") }
   button("Scan for LEDs (15 seconds)") { scan() }
