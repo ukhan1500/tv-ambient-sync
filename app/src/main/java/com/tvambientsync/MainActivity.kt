@@ -19,7 +19,8 @@ class MainActivity : Activity() {
  private val seen = mutableSetOf<String>()
  private var busy = false
  private var deviceAddress = ""
- private var interval = 250L
+ private var interval = 100L
+ private var vivid = false
  private var brightness = 0.8
  private fun report(s: String) = runOnUiThread { log.append("\n$s") }
  private fun button(title: String, action: () -> Unit) {
@@ -29,12 +30,13 @@ class MainActivity : Activity() {
   super.onCreate(state)
   layout = LinearLayout(this).apply { orientation = 1; setPadding(48,24,48,24) }
   setContentView(ScrollView(this).apply { addView(layout) })
-  log = TextView(this).apply { text = "TV Ambient Sync • Phase 1\nExperimental protocol. Select a writable characteristic before testing." }
+  log = TextView(this).apply { text = "TV Ambient Sync • v0.3\nExperimental protocol. Select a writable characteristic before testing." }
   layout.addView(log)
   button("Start Sync") { startSync() }
   button("Stop Sync") { stopService(android.content.Intent(this,SyncService::class.java)); report("Sync stopped") }
   button("Sync status") { report(getSharedPreferences("sync",0).getString("status","Not started") ?: "Not started") }
-  button("Update speed: toggle 250 / 500 ms") { interval=if(interval==250L) 500L else 250L; report("Next session interval: $interval ms") }
+  button("Speed: toggle fast 100 / smooth 250 ms") { interval=if(interval==100L) 250L else 100L; report("Next session interval: $interval ms") }
+  button("Color enhancement: toggle on/off") { vivid=!vivid; report("Next session enhanced colors: $vivid") }
   button("Brightness: toggle 80% / 50%") { brightness=if(brightness==0.8) 0.5 else 0.8; report("Next session brightness: $brightness") }
   button("Scan for LEDs (15 seconds)") { scan() }
   button("Disconnect") { disconnect() }
@@ -43,7 +45,7 @@ class MainActivity : Activity() {
   }
  }
  private fun startSync() {
-  if(gatt == null || selected == null) { report("Connect and select the tested FFF3 characteristic first."); return }
+  if(selected == null && getSharedPreferences("controller",0).getString("address",null)==null) { report("Connect and select the tested FFF3 characteristic once."); return }
   val manager=getSystemService(android.media.projection.MediaProjectionManager::class.java)
   val consent=if(Build.VERSION.SDK_INT>=34) manager.createScreenCaptureIntent(android.media.projection.MediaProjectionConfig.createConfigForDefaultDisplay()) else manager.createScreenCaptureIntent()
   startActivityForResult(consent,22)
@@ -52,10 +54,15 @@ class MainActivity : Activity() {
   super.onActivityResult(requestCode,resultCode,data)
   if(requestCode!=22) return
   if(resultCode!=RESULT_OK || data==null) { report("Screen capture permission declined"); return }
-  val c=selected ?: return
+  val prefs=getSharedPreferences("controller",0)
+  val c=selected
+  val savedAddress=if(c!=null) deviceAddress else prefs.getString("address","")!!
+  val savedService=c?.service?.uuid?.toString() ?: prefs.getString("service","")!!
+  val savedCharacteristic=c?.uuid?.toString() ?: prefs.getString("characteristic","")!!
   val request=android.content.Intent(this,SyncService::class.java)
-   .putExtra("token",data).putExtra("address",deviceAddress)
-   .putExtra("service",c.service.uuid.toString()).putExtra("characteristic",c.uuid.toString())
+   .putExtra("token",data).putExtra("address",savedAddress)
+   .putExtra("service",savedService).putExtra("characteristic",savedCharacteristic)
+   .putExtra("vivid",vivid)
    .putExtra("interval",interval).putExtra("brightness",brightness)
   disconnect()
   startForegroundService(request)
@@ -102,7 +109,7 @@ class MainActivity : Activity() {
     service.characteristics.forEach { c ->
      report("Characteristic ${c.uuid} properties=${c.properties}")
      if(c.properties and (BluetoothGattCharacteristic.PROPERTY_WRITE or BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE) != 0)
-      runOnUiThread { button("Use experimental write: ${c.uuid}") { if(g == gatt) { selected=c; report("Selected ${c.uuid}") } } }
+      runOnUiThread { button("Use experimental write: ${c.uuid}") { if(g == gatt) { selected=c; getSharedPreferences("controller",0).edit().putString("address",deviceAddress).putString("service",c.service.uuid.toString()).putString("characteristic",c.uuid.toString()).apply(); report("Saved controller and selected ${c.uuid}") } } }
     }
    }
   }
