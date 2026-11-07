@@ -30,6 +30,26 @@ class SyncService : Service() {
  private var sent = intArrayOf(-255,-255,-255)
  private var interval = 50L
  private var dominantBin = -1
+ private var diagnosticStart = 0L
+ private var diagnosticEnd = 0L
+ private var diagnosticLast = 0L
+ private val diagnosticLines = mutableListOf<String>()
+ private val finishDiagnostic = Runnable {
+  val text=if(diagnosticLines.isEmpty()) "No frames received during recording. Video capture may be unavailable." else diagnosticLines.joinToString("\n")
+  getSharedPreferences("diagnostics",0).edit().putString("result",text).apply()
+  diagnosticStart=0L
+ }
+ private val diagnosticReceiver=object: BroadcastReceiver() {
+  override fun onReceive(context: Context?, intent: Intent?) {
+   h.removeCallbacks(finishDiagnostic)
+   diagnosticLines.clear()
+   diagnosticLast=0L
+   diagnosticStart=SystemClock.elapsedRealtime()+10000
+   diagnosticEnd=diagnosticStart+10000
+   getSharedPreferences("diagnostics",0).edit().putString("result","Waiting 10 seconds, then recording for 10 seconds. Return to the video now.").apply()
+   h.postDelayed(finishDiagnostic,20000)
+  }
+ }
  private var vivid = false
  private var lastStatus = 0L
  private var brightness = 0.8
@@ -43,6 +63,9 @@ class SyncService : Service() {
  }
  override fun onCreate() {
   super.onCreate()
+  val diagnosticsFilter=IntentFilter("com.tvambientsync.DIAGNOSTICS")
+  if(Build.VERSION.SDK_INT>=33) registerReceiver(diagnosticReceiver,diagnosticsFilter,Context.RECEIVER_NOT_EXPORTED)
+  else registerReceiver(diagnosticReceiver,diagnosticsFilter)
   val filter=IntentFilter("com.tvambientsync.BRIGHTNESS")
   if(Build.VERSION.SDK_INT>=33) registerReceiver(brightnessReceiver,filter,Context.RECEIVER_NOT_EXPORTED)
   else registerReceiver(brightnessReceiver,filter)
@@ -119,6 +142,11 @@ class SyncService : Service() {
        for(k in 0..2) current[k]+=(if(interval<=50) 1.0 else if(interval<=100) 0.8 else 0.35)*(target[k]-current[k])
        smooth=current
        val rgb=IntArray(3) { (current[it]*brightness).toInt().coerceIn(0,255) }
+       if(diagnosticStart>0 && now>=diagnosticStart && now<diagnosticEnd && now-diagnosticLast>=1000) {
+        diagnosticLast=now
+        val neutral=100*(12..15).sumOf { votes[it] }/count.coerceAtLeast(1)
+        diagnosticLines.add("+${(now-diagnosticStart)/1000}s: dominant ${share}% raw ${target.map { it.toInt() }.joinToString()} output ${rgb.joinToString()} neutral ${neutral}% BLE ${if(characteristic!=null) "ready" else "connecting"}")
+       }
        if(rgb.indices.any { kotlin.math.abs(rgb[it]-sent[it]) >= 4 } || now-lastWrite>2000) write(rgb)
        if(now-lastStatus>=1000) { lastStatus=now; status(if(target.all { it<3 }) "Sync active: black frame (dark or protected content)" else "Dominant $share% • RGB ${rgb.joinToString()} • BLE ${if(characteristic!=null) "ready" else "connecting"}") }
       }
@@ -167,6 +195,8 @@ class SyncService : Service() {
   if(g.writeCharacteristic(c)) sent=rgb.copyOf() else retry()
  }
  override fun onDestroy() {
+  unregisterReceiver(diagnosticReceiver)
+  if(diagnosticStart>0) getSharedPreferences("diagnostics",0).edit().putString("result","Sync stopped before completion.\n"+diagnosticLines.joinToString("\n")).apply()
   unregisterReceiver(brightnessReceiver)
   running=false; h.removeCallbacksAndMessages(null)
   display?.release(); reader?.close(); projection?.stop()
