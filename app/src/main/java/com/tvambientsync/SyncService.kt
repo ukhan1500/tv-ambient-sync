@@ -35,6 +35,18 @@ class SyncService : Service() {
  private var brightness = 0.8
  private var running = false
  private val reconnect = Runnable { if(running) connect() }
+ private val brightnessReceiver=object: BroadcastReceiver() {
+  override fun onReceive(context: Context?, intent: Intent?) {
+   brightness=(intent?.getIntExtra("value",80) ?: 80).coerceIn(0,100)/100.0
+   sent=intArrayOf(-255,-255,-255)
+  }
+ }
+ override fun onCreate() {
+  super.onCreate()
+  val filter=IntentFilter("com.tvambientsync.BRIGHTNESS")
+  if(Build.VERSION.SDK_INT>=33) registerReceiver(brightnessReceiver,filter,Context.RECEIVER_NOT_EXPORTED)
+  else registerReceiver(brightnessReceiver,filter)
+ }
  override fun onBind(intent: Intent?) = null
  private fun status(text: String) {
   getSharedPreferences("sync",0).edit().putString("status",text).apply()
@@ -155,6 +167,7 @@ class SyncService : Service() {
   if(g.writeCharacteristic(c)) sent=rgb.copyOf() else retry()
  }
  override fun onDestroy() {
+  unregisterReceiver(brightnessReceiver)
   running=false; h.removeCallbacksAndMessages(null)
   display?.release(); reader?.close(); projection?.stop()
   try { gatt?.close() } catch(_: Exception) {}
