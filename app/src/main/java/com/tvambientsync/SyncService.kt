@@ -90,6 +90,7 @@ class SyncService : Service() {
    if(Build.VERSION.SDK_INT >= 29) startForeground(1,notification,ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
    else startForeground(1,notification)
    running=true
+   getSharedPreferences("sync",0).edit().putBoolean("running",true).apply()
    address=intent.getStringExtra("address")!!
    serviceId=intent.getStringExtra("service")!!
    characteristicId=intent.getStringExtra("characteristic")!!
@@ -198,6 +199,7 @@ class SyncService : Service() {
   unregisterReceiver(diagnosticReceiver)
   if(diagnosticStart>0) getSharedPreferences("diagnostics",0).edit().putString("result","Sync stopped before completion.\n"+diagnosticLines.joinToString("\n")).apply()
   unregisterReceiver(brightnessReceiver)
+  getSharedPreferences("sync",0).edit().putBoolean("running",false).apply()
   running=false; h.removeCallbacksAndMessages(null)
   display?.release(); reader?.close(); projection?.stop()
   try { gatt?.close() } catch(_: Exception) {}
